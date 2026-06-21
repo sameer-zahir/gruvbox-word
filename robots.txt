@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://sameerzahir97-cloud.github.io/gruvbox-word/sitemap.xml
+Sitemap: https://word.sameerzahir.com/sitemap.xml

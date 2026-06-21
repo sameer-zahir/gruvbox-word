@@ -6,7 +6,7 @@
 
 ### A calm, fast, offline writing app — Word, but in [Gruvbox](https://github.com/morhetz/gruvbox) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/).
 
-[**✍️ Open the app →**](https://sameerzahir97-cloud.github.io/gruvbox-word)
+[**✍️ Open the app →**](https://word.sameerzahir.com)
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-af3a03)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-0-79740e)

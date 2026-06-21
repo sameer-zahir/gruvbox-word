@@ -4,7 +4,7 @@
   "description": "A calm, offline, distraction-free writing app with a warm Gruvbox theme and JetBrains Mono. Hybrid editor with a Word-style toolbar and live Markdown.",
   "start_url": ".",
   "scope": ".",
-  "id": "/gruvbox-word/",
+  "id": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
