@@ -4,7 +4,7 @@ const ZWSP = "​";
 
 /* ---------- helpers ---------- */
 
-function topBlock(editor, node) {
+export function topBlock(editor, node) {
   let el = node.nodeType === 3 ? node.parentElement : node;
   while (el && el !== editor && el.parentElement !== editor) el = el.parentElement;
   return el && el !== editor ? el : null;
@@ -17,7 +17,7 @@ function inCodeContext(node) {
 
 /* ---------- block-level shortcuts (fired on Space) ---------- */
 // Returns true if it consumed the space and transformed the block.
-export function tryBlockShortcut(editor, execCmd) {
+export function tryBlockShortcut(editor, execCmd, onTask) {
   const sel = window.getSelection();
   if (!sel.rangeCount || !sel.isCollapsed) return false;
   const range = sel.getRangeAt(0);
@@ -38,10 +38,12 @@ export function tryBlockShortcut(editor, execCmd) {
   const blockMap = { "#": "H1", "##": "H2", "###": "H3", ">": "BLOCKQUOTE" };
   let action = null;
   if (blockMap[marker]) action = { kind: "format", tag: blockMap[marker] };
+  else if (/^\[[ xX]?\]$/.test(marker)) action = { kind: "task" };
   else if (marker === "-" || marker === "*" || marker === "+") action = { kind: "ul" };
   else if (/^\d+\.$/.test(marker)) action = { kind: "ol" };
   else if (marker === "```") action = { kind: "format", tag: "PRE" };
   if (!action) return false;
+  if (action.kind === "task" && !onTask) return false;
 
   // remove the typed marker
   const del = range.cloneRange();
@@ -52,11 +54,13 @@ export function tryBlockShortcut(editor, execCmd) {
   if (action.kind === "format") execCmd("formatBlock", action.tag);
   else if (action.kind === "ul") execCmd("insertUnorderedList");
   else if (action.kind === "ol") execCmd("insertOrderedList");
+  else if (action.kind === "task") onTask();
   return true;
 }
 
 /* ---------- inline shortcuts (fired on input of a delimiter) ---------- */
 const INLINE_RULES = [
+  { re: /\[([^\]\n]+)\]\(([^)\s]+)\)$/, tag: "a", link: true },
   { re: /\*\*([^*\n]+?)\*\*$/, tag: "strong", d: 2 },
   { re: /__([^_\n]+?)__$/, tag: "strong", d: 2 },
   { re: /~~([^~\n]+?)~~$/, tag: "del", d: 2 },
@@ -81,7 +85,8 @@ export function tryInlineShortcut(editor) {
     if (!m) continue;
     const inner = m[1];
     if (!inner || (rule.raw && inner.includes(ZWSP))) continue;
-    const span = inner.length + rule.d * 2; // delimiter+inner+delimiter
+    // links consume the whole [text](url); other rules just the delimited run
+    const span = rule.link ? m[0].length : inner.length + rule.d * 2;
     const start = caret - span;
     if (start < 0) continue;
 
@@ -92,6 +97,7 @@ export function tryInlineShortcut(editor) {
 
     const el = document.createElement(rule.tag);
     el.textContent = inner;
+    if (rule.link) el.setAttribute("href", safeHref(m[2]));
     r.insertNode(el);
 
     // Break out of the inline element with a zero-width space so typing
@@ -106,6 +112,105 @@ export function tryInlineShortcut(editor) {
     return true;
   }
   return false;
+}
+
+/* ---------- smart typography (fired on insertText) ---------- */
+// Calm punctuation: -- → —, ... → …, -> → →, and context-aware curly quotes.
+// Returns true if it replaced something. Quotes are gated by the caller's pref.
+export function trySmartTypography(editor, data, quotes) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== 3 || inCodeContext(node)) return false;
+
+  const caret = range.startOffset;
+  const before = node.textContent.slice(0, caret);
+  let from = -1;
+  let repl = null;
+
+  if (data === "-" && before.endsWith("--")) { from = caret - 2; repl = "—"; }
+  else if (data === "." && before.endsWith("...")) { from = caret - 3; repl = "…"; }
+  else if (data === ">" && before.endsWith("->")) { from = caret - 2; repl = "→"; }
+  else if (quotes && (data === '"' || data === "'")) {
+    const prev = before[caret - 2];
+    const open = !prev || /[\s([{‘“]/.test(prev);
+    repl = data === '"' ? (open ? "“" : "”") : open ? "‘" : "’";
+    from = caret - 1;
+  }
+  if (repl == null || from < 0) return false;
+
+  const r = document.createRange();
+  r.setStart(node, from);
+  r.setEnd(node, caret);
+  r.deleteContents();
+  const t = document.createTextNode(repl);
+  r.insertNode(t);
+  const nr = document.createRange();
+  nr.setStart(t, t.length);
+  nr.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(nr);
+  return true;
+}
+
+/* ---------- auto-link bare URLs (fired on Space) ---------- */
+const URL_RE = /(https?:\/\/[^\s<]*[^\s<.,;:!?)\]}'"]|www\.[^\s<]*[^\s<.,;:!?)\]}'"])$/i;
+
+export function tryAutoLink(editor) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== 3 || inCodeContext(node)) return false;
+  const parent = node.parentElement;
+  if (parent && parent.closest("a")) return false;
+
+  const caret = range.startOffset;
+  const trailing = node.textContent.slice(0, caret).match(/\s+$/);
+  const end = caret - (trailing ? trailing[0].length : 0);
+  const m = URL_RE.exec(node.textContent.slice(0, end));
+  if (!m) return false;
+
+  const url = m[1];
+  const start = end - url.length;
+  const r = document.createRange();
+  r.setStart(node, start);
+  r.setEnd(node, end);
+  r.deleteContents();
+  const a = document.createElement("a");
+  a.setAttribute("href", /^www\./i.test(url) ? "https://" + url : url);
+  a.textContent = url;
+  r.insertNode(a);
+
+  // Keep the caret after the trailing space (outside the link) so typing continues normally.
+  const after = a.nextSibling;
+  const nr = document.createRange();
+  if (after && after.nodeType === 3) nr.setStart(after, Math.min(trailing ? trailing[0].length : 0, after.length));
+  else nr.setStartAfter(a);
+  nr.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(nr);
+  return true;
+}
+
+// If pasted text is a single bare URL, return its href; else null.
+export function singleUrl(text) {
+  const t = (text || "").trim();
+  if (!t || /\s/.test(t)) return null;
+  if (!/^(https?:\/\/[^\s<]+|www\.[^\s<]+)$/i.test(t)) return null;
+  return /^www\./i.test(t) ? "https://" + t : t;
+}
+
+// Neutralize dangerous link targets (javascript:, data:, …). Allows http(s)/mailto,
+// anchors and relative paths; upgrades bare www. to https. Returns "#" for anything else.
+export function safeHref(url) {
+  const u = (url || "").trim();
+  if (/^(https?:|mailto:)/i.test(u)) return u;
+  if (/^(#|\/|\.{1,2}\/)/.test(u)) return u;
+  if (/^www\./i.test(u)) return "https://" + u;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return "#"; // some other (untrusted) scheme
+  return u; // schemeless / relative text — no colon, safe
 }
 
 /* ---------- HTML -> Markdown (export) ---------- */
@@ -125,10 +230,32 @@ export function htmlToMarkdown(root) {
         else if (t === "DEL" || t === "S" || t === "STRIKE") out += `~~${inline(n)}~~`;
         else if (t === "CODE") out += "`" + n.textContent.replace(/​/g, "") + "`";
         else if (t === "A") out += `[${inline(n)}](${n.getAttribute("href") || ""})`;
+        else if (t === "UL" || t === "OL" || t === "LI" || t === "INPUT") { /* blocks/widgets: handled by listLines() */ }
         else out += inline(n);
       }
     });
     return out;
+  }
+
+  // Recurse a list, indenting nested levels two spaces. Task-list items become
+  // `- [ ]` / `- [x]` so checklists round-trip through Markdown.
+  function listLines(listEl, depth, ordered) {
+    const pad = "  ".repeat(depth);
+    const isTask = listEl.classList.contains("task-list");
+    let n = 1;
+    listEl.querySelectorAll(":scope > li").forEach((li) => {
+      let marker;
+      if (isTask) {
+        const box = li.querySelector(":scope > input[type=checkbox]");
+        marker = box && (box.checked || box.hasAttribute("checked")) ? "- [x] " : "- [ ] ";
+      } else {
+        marker = ordered ? `${n++}. ` : "- ";
+      }
+      lines.push(pad + marker + inline(li).trim());
+      li.querySelectorAll(":scope > ul, :scope > ol").forEach((sub) =>
+        listLines(sub, depth + 1, sub.tagName === "OL")
+      );
+    });
   }
 
   function walk(parent) {
@@ -137,12 +264,8 @@ export function htmlToMarkdown(root) {
       if (t === "H1") lines.push("# " + inline(el), "");
       else if (t === "H2") lines.push("## " + inline(el), "");
       else if (t === "H3") lines.push("### " + inline(el), "");
-      else if (t === "UL") {
-        el.querySelectorAll(":scope > li").forEach((li) => lines.push("- " + inline(li)));
-        lines.push("");
-      } else if (t === "OL") {
-        let i = 1;
-        el.querySelectorAll(":scope > li").forEach((li) => lines.push(`${i++}. ` + inline(li)));
+      else if (t === "UL" || t === "OL") {
+        listLines(el, 0, t === "OL");
         lines.push("");
       } else if (t === "BLOCKQUOTE") {
         inline(el).split("\n").forEach((l) => lines.push("> " + l));
@@ -171,7 +294,7 @@ export function markdownToHtml(md) {
       .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
       .replace(/~~([^~]+)~~/g, "<del>$1</del>")
       .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => `<a href="${safeHref(url).replace(/"/g, "&quot;")}">${text}</a>`);
 
   const lines = String(md).replace(/\r\n/g, "\n").split("\n");
   let html = "";
@@ -194,9 +317,19 @@ export function markdownToHtml(md) {
       i++;
       continue;
     }
+    if (/^\s*[-*+]\s\[[ xX]?\]\s/.test(line)) {
+      let items = "";
+      while (i < lines.length && /^\s*[-*+]\s\[[ xX]?\]\s/.test(lines[i])) {
+        const m = lines[i++].match(/^\s*[-*+]\s\[([ xX]?)\]\s(.*)$/);
+        const checked = /x/i.test(m[1]) ? " checked" : "";
+        items += `<li class="task"><input type="checkbox" contenteditable="false"${checked}> ${inlineMd(m[2])}</li>`;
+      }
+      html += `<ul class="task-list">${items}</ul>`;
+      continue;
+    }
     if (/^\s*[-*+]\s/.test(line)) {
       let items = "";
-      while (i < lines.length && /^\s*[-*+]\s/.test(lines[i]))
+      while (i < lines.length && /^\s*[-*+]\s/.test(lines[i]) && !/^\s*[-*+]\s\[[ xX]?\]\s/.test(lines[i]))
         items += `<li>${inlineMd(lines[i++].replace(/^\s*[-*+]\s/, ""))}</li>`;
       html += `<ul>${items}</ul>`;
       continue;
