@@ -162,7 +162,15 @@ button { font-family: inherit; }
   color: var(--fg-mute);
 }
 
+.doc-filter {
+  width: calc(100% - .9rem); margin: .1rem .45rem .35rem; padding: .35rem .55rem;
+  font: inherit; font-size: .82rem; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); outline: none;
+}
+.doc-filter:focus { border-color: var(--accent); }
+.doc-filter::-webkit-search-cancel-button { cursor: pointer; }
 .doc-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; max-height: 34vh; }
+.doc-empty { padding: .42rem .55rem; color: var(--fg-faint); font-size: .82rem; }
 .doc-item {
   display: flex; align-items: center; gap: .4rem;
   padding: .42rem .55rem; border-radius: var(--radius-sm);
@@ -265,6 +273,26 @@ button { font-family: inherit; }
 .editor ul, .editor ol { margin: 0 0 1.05rem; padding-left: 1.6rem; }
 .editor li { margin: .25rem 0; }
 .editor li::marker { color: var(--accent); }
+
+/* Checklists — hanging indent so inline formatting (bold/links/code) flows normally
+   and wrapped lines align; the checkbox sits in the left gutter. */
+.editor ul.task-list { list-style: none; padding-left: .2rem; }
+.editor li.task { list-style: none; position: relative; padding-left: 1.7em; }
+.editor li.task > ul, .editor li.task > ol { margin: .25rem 0 0; }
+.editor li.task > input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  position: absolute; left: 0; top: .42em;
+  width: 1.05em; height: 1.05em;
+  border: 2px solid var(--border-strong); border-radius: 5px; background: var(--bg);
+  cursor: pointer; transition: background var(--tr), border-color var(--tr);
+}
+.editor li.task > input[type="checkbox"]:hover { border-color: var(--accent); }
+.editor li.task > input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.editor li.task > input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px; border: solid var(--bg-hard); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.editor li.task:has(> input:checked) { color: var(--fg-mute); text-decoration: line-through; text-decoration-color: var(--fg-faint); }
 .editor blockquote {
   margin: 0 0 1.05rem; padding: .3rem 0 .3rem 1.1rem;
   border-left: 3px solid var(--accent); color: var(--fg-soft); font-style: italic;
@@ -286,6 +314,12 @@ button { font-family: inherit; }
 .editor mark.find-hit.is-current { background: var(--accent-bright); color: #fff; }
 
 /* ============================================================
+   Focus / typewriter mode — dim everything but the current block
+   ============================================================ */
+.app.focus-mode .editor > * { opacity: .3; transition: opacity var(--tr); }
+.app.focus-mode .editor > .is-active-line { opacity: 1; }
+
+/* ============================================================
    Status bar
    ============================================================ */
 .statusbar {
@@ -295,6 +329,13 @@ button { font-family: inherit; }
   font-size: .78rem; color: var(--fg-mute);
 }
 .status__dot { color: var(--fg-faint); }
+.status__words { cursor: pointer; border-radius: var(--radius-sm); }
+.status__words:hover { color: var(--fg); }
+.status__words:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.goalring { width: 14px; height: 14px; flex: none; transform: rotate(-90deg); }
+.goalring__track { fill: none; stroke: var(--bg-2); stroke-width: 3; }
+.goalring__fill { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset var(--tr); }
+.goalring.is-done .goalring__fill { stroke: var(--aqua); }
 .status__spacer { flex: 1; }
 .status__save { color: var(--aqua); display: inline-flex; align-items: center; gap: .3rem; }
 .status__save.is-saving { color: var(--fg-mute); }
@@ -346,8 +387,10 @@ button { font-family: inherit; }
   background: none; color: var(--fg-soft); cursor: pointer; font-size: .87rem; text-align: left;
 }
 .menu__item svg { width: 16px; height: 16px; flex: none; color: var(--fg-mute); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.menu__item:hover { background: var(--bg-1); color: var(--fg-strong); }
-.menu__hint { margin-left: auto; color: var(--fg-faint); font-size: .78rem; }
+.menu__item:hover, .menu__item.is-active { background: var(--bg-1); color: var(--fg-strong); }
+.menu__hint { margin-left: auto; color: var(--fg-faint); font-size: .78rem; font-family: var(--font); }
+.menu__empty { padding: .5rem .6rem; color: var(--fg-faint); font-size: .85rem; }
+.slash-menu { min-width: 13rem; max-height: 17rem; overflow-y: auto; }
 
 /* ============================================================
    Modal (help / about)
@@ -431,6 +474,14 @@ kbd {
   .editor a { color: #000; text-decoration: underline; }
   .editor code, .editor pre { background: #f4f4f4; border-color: #ccc; color: #000; }
   .editor pre code { color: #000; }
+  .editor ul.task-list { list-style: none; }
+  .editor li.task > input[type="checkbox"] {
+    -webkit-appearance: none; appearance: none; width: .85em; height: .85em; margin-right: .4em;
+    border: 1.4px solid #000; border-radius: 3px; position: relative; vertical-align: -1px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .editor li.task > input[type="checkbox"]:checked { background: #000; }
+  .editor li.task:has(> input:checked) { text-decoration: line-through; color: #444; }
   @page { margin: 2cm; }
 }
 

@@ -11,7 +11,7 @@ function esc(s) {
 }
 
 // Strip editor-only artifacts (zero-width spaces, find highlights) from HTML.
-function cleanHtml(html) {
+export function cleanHtml(html) {
   const tmp = document.createElement("div");
   tmp.innerHTML = html;
   tmp.querySelectorAll("mark.find-hit").forEach((m) => {
@@ -19,6 +19,13 @@ function cleanHtml(html) {
     while (m.firstChild) p.insertBefore(m.firstChild, m);
     p.removeChild(m);
   });
+  // Replace live checkboxes with a static glyph so exported HTML/Word shows an
+  // intentional box rather than an interactive form control.
+  tmp.querySelectorAll("input[type=checkbox]").forEach((box) => {
+    box.replaceWith(document.createTextNode(box.checked || box.hasAttribute("checked") ? "☑ " : "☐ "));
+  });
+  tmp.querySelectorAll("ul.task-list").forEach((ul) => ul.removeAttribute("class"));
+  tmp.querySelectorAll("li.task").forEach((li) => li.removeAttribute("class"));
   return tmp.innerHTML.replace(/​/g, "");
 }
 
